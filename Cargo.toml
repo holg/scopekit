@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["crates/scopekit"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/holg/scopekit"
+rust-version = "1.85"
+
+# Dependencies compile optimised even in dev builds: wgpu and the image
+# protocols are slow unoptimised, and they are not what we debug.
+[profile.dev.package."*"]
+opt-level = 3

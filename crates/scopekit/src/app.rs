@@ -1,0 +1,111 @@
+//! What an application implements: draw the text UI, say where its GPU
+//! views go, react to events.
+
+use crate::waker::Waker;
+use crossterm::event::Event;
+use ratatui::layout::Rect;
+use ratatui::Frame;
+use std::time::Duration;
+
+/// What to do after an event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Flow {
+    /// Keep running (the screen is redrawn).
+    Continue,
+    /// Stop: the terminal is restored, the window closed.
+    Quit,
+}
+
+/// Where the GPU views go this frame, and facts about the screen an app
+/// needs to map the mouse into a view.
+#[derive(Debug, Clone, Default)]
+pub struct ViewSlot {
+    placed: Vec<(String, Rect)>,
+    cell_px: (f32, f32),
+    describe: String,
+}
+
+impl ViewSlot {
+    /// A slot for a frame. scopekit makes these; custom drivers and tests
+    /// can too.
+    pub fn new(cell_px: (f32, f32), describe: String) -> ViewSlot {
+        ViewSlot {
+            placed: Vec::new(),
+            cell_px,
+            describe,
+        }
+    }
+
+    /// Show the view registered as `name` in `area` (in cells) this frame.
+    /// Views not placed are hidden: do that while a popup covers one,
+    /// because in a window views are drawn on top of the text. Placing the
+    /// same name twice moves it.
+    pub fn place(&mut self, name: &str, area: Rect) {
+        self.placed.retain(|(n, _)| n != name);
+        if area.width > 0 && area.height > 0 {
+            self.placed.push((name.to_string(), area));
+        }
+    }
+
+    /// Where view `name` was placed this frame, if anywhere.
+    pub fn rect(&self, name: &str) -> Option<Rect> {
+        self.placed.iter().find(|(n, _)| n == name).map(|(_, r)| *r)
+    }
+
+    /// Every placement this frame, in the order they were made.
+    pub fn placed(&self) -> &[(String, Rect)] {
+        &self.placed
+    }
+
+    /// Screen pixels per text cell (width, height). In a terminal this is
+    /// the font size the terminal reports; in a window, the window's pixel
+    /// size divided by the grid.
+    pub fn cell_px(&self) -> (f32, f32) {
+        self.cell_px
+    }
+
+    /// A view's size in pixels for `area`, as it will be rendered.
+    pub fn px_size(&self, area: Rect) -> (u32, u32) {
+        (
+            (f32::from(area.width) * self.cell_px.0).round() as u32,
+            (f32::from(area.height) * self.cell_px.1).round() as u32,
+        )
+    }
+
+    /// `"Metal · Apple M2 Max → kitty"`: GPU and how views are shown, for
+    /// a status line. `no GPU (…)` when none could be opened; empty until
+    /// the GPU is first used.
+    pub fn describe(&self) -> &str {
+        &self.describe
+    }
+}
+
+/// A scopekit application.
+pub trait App {
+    /// Called once before the first frame, with a [`Waker`] that
+    /// background threads (an emulator's serial port, a build) can use to
+    /// request a redraw at once instead of at the next input or tick.
+    fn start(&mut self, waker: Waker) {
+        let _ = waker;
+    }
+
+    /// Draw one frame of the text UI with ratatui, and place GPU views
+    /// with [`ViewSlot::place`].
+    fn draw(&mut self, frame: &mut Frame, views: &mut ViewSlot);
+
+    /// A key, mouse, paste or resize event. The window mode translates its
+    /// input into the same crossterm types, so one handler serves both.
+    fn event(&mut self, event: Event) -> Flow;
+
+    /// Called between events. Return `true` when something changed and
+    /// the screen should be redrawn (an animation step, cine playback).
+    fn tick(&mut self) -> bool {
+        false
+    }
+
+    /// How often to call [`tick`](App::tick) while it has work; `None`
+    /// waits for events and wake-ups only.
+    fn tick_interval(&self) -> Option<Duration> {
+        None
+    }
+}

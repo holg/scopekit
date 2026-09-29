@@ -1,0 +1,37 @@
+[package]
+name = "scopekit"
+version = "0.1.0"
+description = "Build ratatui viewers with a live wgpu view: in any terminal (kitty, iTerm2, sixel or half blocks) or in their own window with the view composited at full resolution"
+keywords = ["ratatui", "wgpu", "tui", "terminal", "viewer"]
+categories = ["command-line-interface", "graphics", "rendering"]
+readme = "README.md"
+documentation = "https://docs.rs/scopekit"
+include = ["src/**", "examples/**", "fonts/**", "README.md", "HOWTO.md", "Cargo.toml"]
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["terminal", "window"]
+# Run in a terminal; the GPU view is rendered offscreen and sent with the
+# kitty, iTerm2 or sixel graphics protocol, or as half blocks.
+terminal = ["dep:ratatui-image", "dep:image"]
+# Run in a native window: ratatui-wgpu draws the text, the GPU view is
+# composited onto the same surface. Includes the bundled Cascadia Mono font.
+window = ["dep:ratatui-wgpu", "dep:winit"]
+# Read `Config` from TOML (`Config::from_toml`, `Config::load`).
+toml = ["dep:toml", "dep:serde"]
+
+[dependencies]
+# Native backends: Metal, Vulkan, DX12, GL.
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl", "vulkan", "metal", "dx12", "gles"] }
+pollster = "0.4"
+ratatui = { version = "0.30.1", default-features = false, features = ["crossterm"] }
+crossterm = "0.29"
+ratatui-image = { version = "11.1", default-features = false, features = ["crossterm"], optional = true }
+image = { version = "0.25.6", default-features = false, optional = true }
+ratatui-wgpu = { version = "0.6", default-features = false, features = ["ahash"], optional = true }
+winit = { version = "0.30.13", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+toml = { version = "1", optional = true }

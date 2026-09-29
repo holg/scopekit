@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy, every feature combination
+        run: |
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
+          cargo clippy -p scopekit --no-default-features --features terminal -- -D warnings
+          cargo clippy -p scopekit --no-default-features --features window -- -D warnings
+          cargo clippy -p scopekit --no-default-features -- -D warnings
+      # GPU tests skip themselves where the runner has no adapter.
+      - name: Test
+        run: cargo test --workspace --all-features
