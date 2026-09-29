@@ -102,7 +102,14 @@ the view is shown, e.g. `Metal · Apple M2 Max → kitty`.
 - **One input model:** keys, mouse clicks and drags, wheel and trackpad
   (pinch and Cmd/Option-wheel for zoom on a Mac) arrive as crossterm events
   in both modes.
-- **Several views**, named and placed independently.
+- **Several views**, named and placed independently, with **overlay text**
+  on top of them (labels, crosshairs): `slot.overlay(area)`.
+- **Terminal ⇄ window at runtime:** `Config::switch_key` (`--switch-key p`)
+  moves the running app into a window and back.
+- **Gestures** from mouse, trackpad and touch (tap, double tap, long
+  press, pan, zoom, rotate) on views, with overridable default bindings.
+- **Built-in help box** (`?`) generated from the app's keys and the active
+  bindings; **clipboard**: copy a view as an image, select and copy text.
 - **A `Waker`** for background threads (serial consoles, builds).
 - **Configuration** in code or TOML.
 - **Offscreen export** (`render_to_rgba`) and **inline printing**

@@ -223,6 +223,78 @@ impl Offscreen {
     }
 }
 
+/// Render a view that is already prepared for `format` on `gpu` into a
+/// `width` x `height` texture of that format, and return RGBA8 rows (BGRA
+/// targets are swizzled). Used to copy a window's view without preparing
+/// it again on another device.
+pub(crate) fn capture(
+    gpu: &Gpu,
+    view: &mut dyn GpuView,
+    format: wgpu::TextureFormat,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, String> {
+    let (w, h) = (width.max(1), height.max(1));
+    let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("scopekit capture"),
+        size: wgpu::Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let tv = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("scopekit capture"),
+        });
+    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("scopekit capture clear"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: &tv,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        ..Default::default()
+    });
+    let target = Target {
+        view: &tv,
+        format,
+        size: (w, h),
+        region: PixelRect {
+            x: 0,
+            y: 0,
+            width: w,
+            height: h,
+        },
+    };
+    view.render(gpu, &mut encoder, &target);
+    let mut rgba = read_back(gpu, encoder, &texture, w, h)?;
+    if matches!(
+        format,
+        wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
+    ) {
+        for px in rgba.chunks_exact_mut(4) {
+            px.swap(0, 2);
+        }
+    }
+    for px in rgba.chunks_exact_mut(4) {
+        px[3] = 255;
+    }
+    Ok(rgba)
+}
+
 /// Copy `texture` into a buffer after `encoder`'s work and return its rows.
 fn read_back(
     gpu: &Gpu,

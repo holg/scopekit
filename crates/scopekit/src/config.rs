@@ -178,6 +178,21 @@ pub struct Config {
     /// How long to wait for input before calling [`crate::App::tick`]
     /// when the app has no tick interval of its own.
     pub idle_poll: Duration,
+    /// A key that moves the running app between the terminal and a window
+    /// (`--switch-key p`). `None`, the default, turns switching off. While
+    /// [`crate::App::captures_text`] returns `true` the key goes to the app
+    /// instead, so a text field can still receive it. Needs both the
+    /// `terminal` and `window` features.
+    pub switch_key: Option<char>,
+    /// The key that opens the built-in help box, for apps that describe
+    /// themselves with [`crate::App::help`]. `None` leaves the key to the app.
+    pub help_key: Option<char>,
+    /// Mouse, trackpad and touch gesture bindings.
+    pub input: crate::gesture::Input,
+    /// A key that copies the GPU view under the pointer (or the first one)
+    /// to the clipboard as an image (`--copy-key y`). `None`, the default,
+    /// leaves the key to the app. Needs the `clipboard` feature.
+    pub copy_key: Option<char>,
 }
 
 impl Default for Config {
@@ -193,6 +208,10 @@ impl Default for Config {
             font: None,
             palette: Palette::DARK,
             idle_poll: Duration::from_millis(250),
+            switch_key: None,
+            help_key: Some('?'),
+            input: crate::gesture::Input::default(),
+            copy_key: None,
         }
     }
 }

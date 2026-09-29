@@ -26,6 +26,25 @@ In **0.1.0**:
 - `Config` from TOML (`toml` feature);
 - own repository and CI.
 
+Since 0.1.0 (unreleased):
+
+- `Config::switch_key`: move the running app between terminal and window
+  and back (`App::captures_text`, `App::mode_changed`); the winit event
+  loop is kept and run on demand;
+- `ViewSlot::overlay`: text drawn above GPU views (window: second pass of
+  the text texture; terminal: over half-block images);
+- window mode redraws all text when ratatui-wgpu 0.6 dropped a frame
+  because the surface had no texture yet (blank panels at startup).
+- gestures (`App::gesture`, `Config::input`, `[input]` in TOML), touch in
+  windows;
+- built-in help box (`App::help`, `?`), clipboard (`Config::copy_key`,
+  window text selection with Shift + drag, `clipboard::copy_*`),
+  `App::message`;
+- the terminal is asked for its graphics support once per process, and a
+  timed-out query (tmux) no longer swallows the next key: ratatui-image 11
+  leaves its reader thread blocked on stdin, scopekit answers it with a
+  status request. *To report upstream.*
+
 ## Next in scopekit
 
 1. **Console panel** (`scopekit-console`): a VT100 text console widget fed
@@ -43,7 +62,7 @@ In **0.1.0**:
 3. **Key bindings from config.** Named actions (`quit`, `next-tab`, …) bound
    in TOML, shown in a generated help overlay.
 4. **Adopters:**
-   - **geodb-globe:** needs wgpu 28 → 30 first; see HOWTO section 10.
+   - **geodb-globe:** in progress (wgpu 28 → 30, HOWTO section 10).
    - **bimifc's terminal viewer:** *to verify* what it renders today.
 5. **Publish** scopekit on crates.io once geodb-globe runs on it.
 

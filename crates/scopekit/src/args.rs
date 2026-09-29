@@ -9,6 +9,9 @@
 //! | `--font FILE`, `--font-size N` | window text |
 //! | `--title TEXT` | window title |
 //! | `--no-mouse` | [`Config::mouse`] off |
+//! | `--no-gestures` | [`Input::gestures`](crate::Input::gestures) off: raw mouse events only |
+//! | `--switch-key C` | [`Config::switch_key`]: C moves the app between terminal and window |
+//! | `--copy-key C` | [`Config::copy_key`]: C copies the view under the pointer as an image |
 //! | `--config FILE` | a TOML file first, flags on top (`toml` feature) |
 //!
 //! `SCOPEKIT_MODE=window` (or `terminal`) sets the mode from the
@@ -73,6 +76,7 @@ impl Config {
                 "--window" | "-w" => c.mode = Mode::Window,
                 "--terminal" => c.mode = Mode::Terminal,
                 "--no-mouse" => c.mouse = false,
+                "--no-gestures" => c.input.gestures = false,
                 "--backend" => {
                     c.backend = value(
                         "--backend",
@@ -108,6 +112,22 @@ impl Config {
                         })?;
                 }
                 "--title" => c.title = arg("--title")?,
+                "--copy-key" => {
+                    let v = arg("--copy-key")?;
+                    let mut chars = v.chars();
+                    c.copy_key = match (chars.next(), chars.next()) {
+                        (Some(k), None) => Some(k),
+                        _ => return Err(format!("--copy-key {v:?}: expected one character")),
+                    };
+                }
+                "--switch-key" => {
+                    let v = arg("--switch-key")?;
+                    let mut chars = v.chars();
+                    c.switch_key = match (chars.next(), chars.next()) {
+                        (Some(k), None) => Some(k),
+                        _ => return Err(format!("--switch-key {v:?}: expected one character")),
+                    };
+                }
                 #[cfg(feature = "toml")]
                 "--config" => {
                     // A file sets the base; flags already given stay on top.
@@ -161,5 +181,9 @@ mod tests {
         assert!(run(&["--protocol", "vt100"]).unwrap_err().contains("kitty"));
         assert!(run(&["--backend"]).unwrap_err().contains("needs a value"));
         assert!(!run(&["--no-mouse"]).unwrap().0.mouse);
+        assert_eq!(run(&["--switch-key", "p"]).unwrap().0.switch_key, Some('p'));
+        assert!(run(&["--switch-key", "pq"])
+            .unwrap_err()
+            .contains("one character"));
     }
 }

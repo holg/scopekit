@@ -8,8 +8,12 @@ Every Rust example on this page is compiled as a test.
 - [1. The model](#1-the-model)
 - [2. A text-only app](#2-a-text-only-app)
 - [3. Adding a GPU view](#3-adding-a-gpu-view)
+  - [Text over a view (overlays)](#text-over-a-view-overlays)
 - [4. Configuration](#4-configuration)
 - [5. Input: keys, mouse, wheel](#5-input-keys-mouse-wheel)
+  - [Gestures: mouse, trackpad and touch](#gestures-mouse-trackpad-and-touch)
+  - [Help box, copying, text selection](#help-box-copying-text-selection)
+  - [Switching between terminal and window](#switching-between-terminal-and-window)
 - [6. Animation and redraws](#6-animation-and-redraws)
   - [Waking the app from other threads](#waking-the-app-from-other-threads)
 - [7. Exports and command-line output](#7-exports-and-command-line-output)
@@ -306,6 +310,39 @@ fn main() -> Result<(), String> {
 `view.describe()` gives a status string such as `Metal · Apple M2 Max →
 kitty` or `… → window`, or `no GPU (…)` if no adapter could be opened.
 
+### Text over a view (overlays)
+
+In a window the views are drawn after the text, so text in a view's area
+is hidden: labels on a map, a crosshair, a measurement. Draw such text as
+usual and mark its cells with `slot.overlay(area)`; scopekit then draws
+those cells again on top of the views.
+
+```rust
+use scopekit::ratatui::layout::Rect;
+use scopekit::ratatui::style::{Color, Style};
+use scopekit::ratatui::widgets::Paragraph;
+use scopekit::ratatui::Frame;
+use scopekit::ViewSlot;
+
+/// Places the view and writes `name` at cell (col, row) above it.
+fn draw_label(f: &mut Frame, slot: &mut ViewSlot, area: Rect, col: u16, row: u16, name: &str) {
+    slot.place("globe", area);
+    let label = Rect::new(col, row, name.chars().count() as u16, 1).intersection(area);
+    let style = Style::new().fg(Color::White).bg(Color::Black);
+    f.render_widget(Paragraph::new(name).style(style), label);
+    slot.overlay(label);
+}
+```
+
+| Where | Overlay text |
+|---|---|
+| window | drawn again after the views, at full resolution |
+| terminal, half blocks | written over the image's cells |
+| terminal, kitty / iTerm2 / sixel | stays under the image: the terminal draws images above text (*to verify* per terminal) |
+
+Give labels a background colour: in a window the overlay covers whole
+cells, text and background.
+
 ## 4. Configuration
 
 Everything is in [`Config`](crate::Config); set what you need and take the
@@ -386,7 +423,8 @@ The window translates winit's input into them:
 |---|---|
 | keys, F1–F12, arrows, Tab / Shift-Tab | `Event::Key`, as in a terminal |
 | Ctrl, Alt | `KeyModifiers::CONTROL`, `ALT` |
-| `Cmd-Q`, `Cmd-W` | closes the window (the app is not asked) |
+| `Cmd-Q` | quits (the app is not asked) |
+| `Cmd-W`, closing the window | quits; back to the terminal if the app switched there (below) |
 | mouse buttons, drags, moves | `Event::Mouse` with the *cell* under the pointer |
 | wheel, trackpad scroll | `ScrollUp`/`ScrollDown`, one per 24 pixels of scrolling |
 | Cmd or Option + wheel | wheel with `KeyModifiers::ALT` |
@@ -417,6 +455,110 @@ assert_eq!(view_pixel(&slot, Rect::new(5, 2, 40, 20), 6, 2), (15.0, 10.0));
 `slot.px_size(area)` is the view's pixel size for an area. In a terminal
 the cell size comes from the terminal's font. In a window it is the
 surface divided by the text grid, so it includes Retina scaling.
+
+### Gestures: mouse, trackpad and touch
+
+Besides the raw events, scopekit recognises gestures on the app's GPU
+views and hands them to `App::gesture`, with the position in view pixels
+(exact in a window, the cell centre in a terminal) and the view's size:
+
+| Gesture | Default inputs |
+|---|---|
+| `Tap { count: 1 }` | click, tap |
+| `Tap { count: 2 }` | double click, double tap (the first tap arrives first) |
+| `LongPress` | right click, long press |
+| `Pan { dx, dy }` | left or middle drag, one-finger drag, two-finger scroll on a trackpad, two-finger drag on a touch screen |
+| `Zoom { factor }` | mouse wheel, Ctrl/Option/Cmd + scroll, pinch |
+| `Rotate { radians }` | right drag (about the view's centre), two-finger twist |
+
+```rust,no_run
+use scopekit::{Flow, Gesture, GestureKind};
+
+fn gesture(g: Gesture) -> Flow {
+    match g.kind {
+        GestureKind::Pan { dx, dy } => { /* move the content by dx, dy */ let _ = (dx, dy); }
+        GestureKind::Zoom { factor } => { /* scale about g.pos */ let _ = factor; }
+        GestureKind::Tap { count } => { /* pick at g.pos / g.size */ let _ = count; }
+        _ => {}
+    }
+    Flow::Continue
+}
+# let _ = gesture;
+```
+
+The bindings are `Config::input` ([`Input`](crate::Input)); change them in
+code, turn gestures off with `--no-gestures`, or in TOML:
+
+```toml
+[input]
+wheel = "pan"            # zoom | pan | none
+right_drag = "zoom"      # pan | rotate | zoom | none
+trackpad_scroll = "zoom"
+zoom_step = 1.25
+double_tap_ms = 400
+```
+
+Touch in a window also drives the mouse events with its first finger, so
+an app that only handles `Event::Mouse` works on a touch screen too.
+
+### Help box, copying, text selection
+
+An app that returns [`Help`](crate::Help) from `App::help` gets a help box
+on `?` (`Config::help_key`): its keys, scopekit's keys, and a mouse and
+touch table built from the active bindings and the app's description of
+each gesture. Any key or click closes it. Apps without `help()` keep `?`.
+
+```rust
+use scopekit::{GestureType, Help};
+
+let help = Help::new("viewer")
+    .key("+  -", "zoom")
+    .gesture(GestureType::Pan, "move the image")
+    .gesture(GestureType::Zoom, "zoom about the pointer");
+# let _ = help;
+```
+
+With the `clipboard` feature (default):
+
+- `Config::copy_key` (for example `Some('y')`, or `--copy-key y`) copies
+  the view under the pointer, or the first view, as an image at the size it
+  is shown at, in both modes;
+- in a window, Shift + drag selects text and Cmd-C (Ctrl-Shift-C elsewhere)
+  copies it; in a terminal, the terminal's own selection works with Shift +
+  drag while scopekit reports the mouse;
+- `scopekit::clipboard::{copy_text, copy_image}` for the app's own copying.
+
+`App::message` receives "copied …" or the reason copying failed, for a
+status line.
+
+### Switching between terminal and window
+
+With `Config::switch_key` (or `--switch-key p`, or `switch_key = "p"` in
+TOML) the running app moves between the terminal and a window on that key,
+with the same `App` and views. It is off by default.
+
+```rust,no_run
+use scopekit::Config;
+
+let config = Config {
+    switch_key: Some('p'),
+    ..Config::default()
+};
+# let _ = config;
+```
+
+- The key is taken before the app sees it, unless `App::captures_text`
+  returns `true`: return that while a text field has the keyboard, or the
+  field cannot receive the character.
+- Only plain key presses (Shift allowed) count: Ctrl-p reaches the app.
+  Letters match in either case, so `p` and `P` both switch.
+- On each switch scopekit calls `App::mode_changed(mode)`, then `start`
+  again with the new mode's `Waker`, and prepares GPU views again for the
+  new target (another format, possibly another device). A view must be
+  able to rebuild its GPU resources from its own state.
+- A window reached by switching closes back to the terminal; `Cmd-Q`
+  still quits. On platforms where winit cannot run its event loop twice
+  (not macOS, Windows, Linux or the BSDs), a second window cannot open.
 
 ## 6. Animation and redraws
 
@@ -652,14 +794,14 @@ the text panels next to the globe, in one code path.
      crossterm `KeyCode`s, and returns `Flow::Quit` where it returned
      `Action::Quit`.
    - The spin and query debounce move to `tick` / `tick_interval`.
-5. **Labels.** Place names drawn *over* the globe with `draw_labels` cannot
-   stay ratatui text, because in a window the view is drawn on top of the
-   text. Either render the labels in the GPU view (for example as marker
-   sprites with a glyph atlas), or draw them in a side list, as dicomscope
-   does.
-6. **`main.rs`** maps `--window` onto `Config::mode`, and keeps
-   `--screenshot` via `render_to_rgba`. `window.rs` and the half-block
-   widget can then go.
+5. **Labels.** Place names drawn *over* the globe stay ratatui text, marked
+   with `slot.overlay(label_rect)` (section 3, overlays), so they show above
+   the globe in a window and with half blocks.
+6. **`main.rs`** maps `--window` onto `Config::mode`, sets
+   `switch_key: Some('p')` (the old in-process pop-out), and keeps
+   `--screenshot` via `render_to_rgba`. `window.rs`, the pop-out and the
+   half-block widget can then go. `captures_text` returns `true` while the
+   search box is focused.
 
 In a terminal, pointer picking on the globe works as before: mouse events
 arrive as cells, and `slot.cell_px()` converts them to view pixels for the
