@@ -324,7 +324,33 @@ rest from `Config::default()`:
 | `palette` | `Palette::DARK` | window colours: the 16 named colours, foreground and background; `Palette::LIGHT` is included |
 | `idle_poll` | 250 ms | how often to wake without input when the app sets no tick interval |
 
-A typical command line maps straight onto it:
+Every scopekit app gets the same command-line flags from
+[`Config::with_args`](crate::Config::with_args): set your defaults, then
+let the flags override them. Arguments scopekit does not know come back
+for your own parsing:
+
+```rust
+use scopekit::{Config, Mode};
+
+let defaults = Config { title: "my viewer".into(), ..Config::default() };
+let args = ["my-viewer", "--window", "--backend", "metal", "data.bin"].map(String::from);
+let (config, rest) = defaults.with_args(args).unwrap(); // in main: .with_args(std::env::args())
+assert_eq!(config.mode, Mode::Window);
+assert_eq!(rest, ["data.bin"]);
+```
+
+| Flag | Sets |
+|---|---|
+| `--window`, `-w` / `--terminal` | `mode` (also `SCOPEKIT_MODE=window`) |
+| `--backend auto\|metal\|vulkan\|dx12\|gl` | `backend` |
+| `--protocol auto\|kitty\|iterm2\|sixel\|halfblocks` | `protocol` |
+| `--font FILE`, `--font-size N`, `--title TEXT` | window text and title |
+| `--no-mouse` | `mouse` off |
+| `--config FILE` | a TOML file first, flags on top (`toml` feature) |
+
+With `cargo run`, put them after `--`: `cargo run -- --window`.
+
+Or set the fields yourself; a typical command line maps straight onto them:
 
 ```rust
 use scopekit::{Backend, Config, Mode, Palette, Protocol};

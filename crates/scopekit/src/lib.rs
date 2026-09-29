@@ -4,6 +4,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
 mod app;
+mod args;
 pub mod config;
 #[cfg(feature = "toml")]
 mod config_file;

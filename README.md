@@ -48,7 +48,7 @@ git-fetch-with-cli = true
 ```rust
 use scopekit::crossterm::event::{Event, KeyCode};
 use scopekit::ratatui::{layout::{Constraint, Layout}, widgets::Paragraph, Frame};
-use scopekit::{App, Config, Flow, Mode, ViewSlot, Views};
+use scopekit::{App, Config, Flow, ViewSlot, Views};
 
 struct Viewer;
 
@@ -70,11 +70,9 @@ impl App for Viewer {
 
 fn main() -> Result<(), String> {
     let (_scene, view) = scopekit::share(my_renderer());       // step 3
-    let config = Config {
-        mode: if std::env::args().any(|a| a == "--window") { Mode::Window } else { Mode::Terminal },
-        title: "my viewer".into(),
-        ..Config::default()
-    };
+    // Your defaults, then scopekit's flags: --window, --backend, --protocol …
+    let defaults = Config { title: "my viewer".into(), ..Config::default() };
+    let (config, _your_args) = defaults.with_args(std::env::args())?;
     scopekit::run(&mut Viewer, Views::new().with("scene", view), &config)
 }
 ```
@@ -86,7 +84,9 @@ constructor that takes one ([HOWTO §9](HOWTO.md#9-moving-an-existing-wgpu-rende
 [`plasma.rs`](crates/scopekit/examples/plasma.rs) shows a complete one.
 
 **4. Run it:** `cargo run` in a terminal, `cargo run -- --window` for the
-window. The status text from `slot.describe()` tells you the GPU and how
+window (the `--` hands the flag to your program rather than to Cargo).
+Every scopekit app understands the same flags: `--window`, `--backend`,
+`--protocol`, `--font`, `--title`, `--config`. The status text from `slot.describe()` tells you the GPU and how
 the view is shown, e.g. `Metal · Apple M2 Max → kitty`.
 
 ## What you get

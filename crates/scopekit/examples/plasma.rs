@@ -4,6 +4,7 @@
 //! ```text
 //! cargo run -p scopekit --example plasma             # terminal
 //! cargo run -p scopekit --example plasma -- --window # native window
+//! cargo run -p scopekit --example plasma -- --protocol halfblocks
 //! ```
 //!
 //! Keys: `+`/`-` zoom, arrows pan, space pauses, `q` quits. Mouse: wheel
@@ -13,7 +14,7 @@ use scopekit::crossterm::event::{Event, KeyCode, MouseButton, MouseEventKind};
 use scopekit::ratatui::layout::{Constraint, Layout};
 use scopekit::ratatui::widgets::{Block, Paragraph};
 use scopekit::ratatui::Frame;
-use scopekit::{wgpu, App, Config, Flow, Gpu, GpuView, Mode, Target, ViewSlot};
+use scopekit::{wgpu, App, Config, Flow, Gpu, GpuView, Target, ViewSlot};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -248,7 +249,19 @@ impl App for Demo {
 }
 
 fn main() {
-    let window = std::env::args().any(|a| a == "--window");
+    // The app's defaults first, then scopekit's common flags on top:
+    // --window, --backend, --protocol, --font, --title …
+    let defaults = Config {
+        title: "scopekit plasma".into(),
+        ..Config::default()
+    };
+    let (config, _rest) = match defaults.with_args(std::env::args()) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("plasma: {e}");
+            std::process::exit(2);
+        }
+    };
     let (plasma, view) = scopekit::share(Plasma {
         time: 0.0,
         zoom: 1.0,
@@ -263,11 +276,6 @@ fn main() {
         drag: None,
         cell_px: (8.0, 16.0),
         view_h: 1.0,
-    };
-    let config = Config {
-        mode: if window { Mode::Window } else { Mode::Terminal },
-        title: "scopekit plasma".into(),
-        ..Config::default()
     };
     let views = scopekit::Views::new().with("plasma", view);
     if let Err(e) = scopekit::run(&mut app, views, &config) {
