@@ -14,16 +14,17 @@ Items marked *to verify* are plans or findings not yet tested here.
 
 ## Done
 
-- **v0.1:** ratatui app with one wgpu view, in a terminal (kitty, iTerm2,
-  sixel, half blocks) or a native window (ratatui-wgpu compositor); `Config`;
-  palettes; mouse and wheel mapping; offscreen export; `Driver` for tests.
-- **v0.2:**
-  - named views: any number of views per app, registered in `Views` and
-    placed with `slot.place(name, rect)`;
-  - `Waker`, so background threads can request a redraw (terminal: input
-    thread and channel; window: winit user event);
-  - `Config` from TOML (`toml` feature);
-  - own repository and CI.
+In **0.1.0**:
+
+- ratatui apps with wgpu views, in a terminal (kitty, iTerm2, sixel,
+  half blocks) or a native window (ratatui-wgpu compositor); `Config`;
+  palettes; mouse and wheel mapping; offscreen export; `Driver` for tests;
+- named views: any number of views per app, registered in `Views` and
+  placed with `slot.place(name, rect)`;
+- `Waker`, so background threads can request a redraw (terminal: input
+  thread and channel; window: winit user event);
+- `Config` from TOML (`toml` feature);
+- own repository and CI.
 
 ## Next in scopekit
 
@@ -44,7 +45,7 @@ Items marked *to verify* are plans or findings not yet tested here.
 4. **Adopters:**
    - **geodb-globe:** needs wgpu 28 → 30 first; see HOWTO section 10.
    - **bimifc's terminal viewer:** *to verify* what it renders today.
-5. **Publish** scopekit 0.2 on crates.io once geodb-globe runs on it.
+5. **Publish** scopekit on crates.io once geodb-globe runs on it.
 
 ## Bricks
 

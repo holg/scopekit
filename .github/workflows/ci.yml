@@ -18,6 +18,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Format
         run: cargo fmt --all -- --check
+      - name: HOWTO.md at the root is the crate's copy
+        run: cmp HOWTO.md crates/scopekit/HOWTO.md
       - name: Clippy, every feature combination
         run: |
           cargo clippy --workspace --all-targets --all-features -- -D warnings
