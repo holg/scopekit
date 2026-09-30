@@ -1,0 +1,7 @@
+exclude = ["target/**"]
+
+[formatting]
+# Leave arrays laid out as written: one-line feature and dependency lists
+# in Cargo.toml, one entry per line in deny.toml.
+array_auto_expand = false
+array_auto_collapse = false

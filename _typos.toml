@@ -1,0 +1,7 @@
+[default.extend-words]
+ratatui = "ratatui"
+# config_file.rs tests the error for a misspelled key on purpose.
+titel = "titel"
+
+[files]
+extend-exclude = ["target", "crates/scopekit/fonts"]

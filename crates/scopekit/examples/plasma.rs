@@ -4,16 +4,19 @@
 //! ```text
 //! cargo run -p scopekit --example plasma             # terminal
 //! cargo run -p scopekit --example plasma -- --window # native window
+//! cargo run -p scopekit --example plasma -- --protocol halfblocks
 //! ```
 //!
-//! Keys: `+`/`-` zoom, arrows pan, space pauses, `q` quits. Mouse: wheel
-//! zooms, left-drag pans.
+//! Keys: `+`/`-` zoom, arrows pan, space pauses, `p` moves the running app
+//! between terminal and window, `q` quits. Mouse: wheel zooms, left-drag
+//! pans. The zoom factor in the view's corner is an overlay: text drawn on
+//! top of the GPU view.
 
 use scopekit::crossterm::event::{Event, KeyCode, MouseButton, MouseEventKind};
 use scopekit::ratatui::layout::{Constraint, Layout};
 use scopekit::ratatui::widgets::{Block, Paragraph};
 use scopekit::ratatui::Frame;
-use scopekit::{wgpu, App, Config, Flow, Gpu, GpuView, Mode, Target, ViewSlot};
+use scopekit::{wgpu, App, Config, Flow, Gpu, GpuView, Target, ViewSlot};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -180,7 +183,7 @@ impl App for Demo {
             Layout::horizontal([Constraint::Length(30), Constraint::Min(10)]).areas(f.area());
         let p = self.plasma.borrow();
         let text = format!(
-            "zoom  {:.2}\npan   {:.2}, {:.2}\n{}\n\n+ -  zoom\narrows  pan\nspace  pause\nq  quit\n\nwheel zooms,\ndrag pans\n\n{}",
+            "zoom  {:.2}\npan   {:.2}, {:.2}\n{}\n\n+ -  zoom\narrows  pan\nspace  pause\np  terminal/window\nq  quit\n\nwheel zooms,\ndrag pans\n\n{}",
             p.zoom, p.pan.0, p.pan.1, if self.paused { "paused" } else { "running" }, view.describe()
         );
         f.render_widget(
@@ -191,6 +194,23 @@ impl App for Demo {
         let inner = block.inner(main);
         f.render_widget(block, main);
         view.place("plasma", inner);
+        // A label on top of the view.
+        let label = format!(" ×{:.2} ", p.zoom);
+        let tag = scopekit::ratatui::layout::Rect::new(
+            inner.x + 1,
+            inner.y,
+            (label.chars().count() as u16).min(inner.width.saturating_sub(1)),
+            1.min(inner.height),
+        );
+        f.render_widget(
+            Paragraph::new(label).style(
+                scopekit::ratatui::style::Style::new()
+                    .fg(scopekit::ratatui::style::Color::Black)
+                    .bg(scopekit::ratatui::style::Color::Yellow),
+            ),
+            tag,
+        );
+        view.overlay(tag);
         self.cell_px = view.cell_px();
         self.view_h = view.px_size(inner).1.max(1) as f32;
     }
@@ -248,7 +268,20 @@ impl App for Demo {
 }
 
 fn main() {
-    let window = std::env::args().any(|a| a == "--window");
+    // The app's defaults first, then scopekit's common flags on top:
+    // --window, --backend, --protocol, --font, --title …
+    let defaults = Config {
+        title: "scopekit plasma".into(),
+        switch_key: Some('p'),
+        ..Config::default()
+    };
+    let (config, _rest) = match defaults.with_args(std::env::args()) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("plasma: {e}");
+            std::process::exit(2);
+        }
+    };
     let (plasma, view) = scopekit::share(Plasma {
         time: 0.0,
         zoom: 1.0,
@@ -263,11 +296,6 @@ fn main() {
         drag: None,
         cell_px: (8.0, 16.0),
         view_h: 1.0,
-    };
-    let config = Config {
-        mode: if window { Mode::Window } else { Mode::Terminal },
-        title: "scopekit plasma".into(),
-        ..Config::default()
     };
     let views = scopekit::Views::new().with("plasma", view);
     if let Err(e) = scopekit::run(&mut app, views, &config) {

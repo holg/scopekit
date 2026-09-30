@@ -38,6 +38,27 @@ struct File {
     palette: Option<String>,
     colors: Option<BTreeMap<String, String>>,
     idle_poll_ms: Option<u64>,
+    switch_key: Option<String>,
+    help_key: Option<String>,
+    copy_key: Option<String>,
+    input: Option<InputFile>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct InputFile {
+    gestures: Option<bool>,
+    left_drag: Option<String>,
+    right_drag: Option<String>,
+    middle_drag: Option<String>,
+    one_finger: Option<String>,
+    wheel: Option<String>,
+    trackpad_scroll: Option<String>,
+    modifier_scroll: Option<String>,
+    zoom_step: Option<f32>,
+    double_tap_ms: Option<u64>,
+    long_press_ms: Option<u64>,
+    slop: Option<f32>,
 }
 
 fn pick<T: Copy>(what: &str, value: &str, options: &[(&str, T)]) -> Result<T, String> {
@@ -100,6 +121,84 @@ impl Config {
         }
         if let Some(v) = f.mouse {
             c.mouse = v;
+        }
+        if let Some(k) = f.copy_key {
+            let mut chars = k.chars();
+            c.copy_key = match (chars.next(), chars.next()) {
+                (Some(ch), None) => Some(ch),
+                (None, _) => None,
+                _ => return Err(format!("copy_key {k:?}: expected one character")),
+            };
+        }
+        if let Some(k) = f.help_key {
+            let mut chars = k.chars();
+            c.help_key = match (chars.next(), chars.next()) {
+                (Some(ch), None) => Some(ch),
+                (None, _) => None,
+                _ => return Err(format!("help_key {k:?}: expected one character")),
+            };
+        }
+        if let Some(i) = f.input {
+            use crate::gesture::{DragAction, ScrollAction};
+            let drags = [
+                ("pan", DragAction::Pan),
+                ("rotate", DragAction::Rotate),
+                ("zoom", DragAction::Zoom),
+                ("none", DragAction::None),
+            ];
+            let scrolls = [
+                ("zoom", ScrollAction::Zoom),
+                ("pan", ScrollAction::Pan),
+                ("none", ScrollAction::None),
+            ];
+            let n = &mut c.input;
+            if let Some(v) = i.gestures {
+                n.gestures = v;
+            }
+            for (field, value) in [
+                ("input.left_drag", (&mut n.left_drag, i.left_drag)),
+                ("input.right_drag", (&mut n.right_drag, i.right_drag)),
+                ("input.middle_drag", (&mut n.middle_drag, i.middle_drag)),
+                ("input.one_finger", (&mut n.one_finger, i.one_finger)),
+            ] {
+                if let (slot, Some(v)) = value {
+                    *slot = pick(field, &v, &drags)?;
+                }
+            }
+            for (field, value) in [
+                ("input.wheel", (&mut n.wheel, i.wheel)),
+                (
+                    "input.trackpad_scroll",
+                    (&mut n.trackpad_scroll, i.trackpad_scroll),
+                ),
+                (
+                    "input.modifier_scroll",
+                    (&mut n.modifier_scroll, i.modifier_scroll),
+                ),
+            ] {
+                if let (slot, Some(v)) = value {
+                    *slot = pick(field, &v, &scrolls)?;
+                }
+            }
+            if let Some(v) = i.zoom_step {
+                n.zoom_step = v.max(1.001);
+            }
+            if let Some(ms) = i.double_tap_ms {
+                n.double_tap = Duration::from_millis(ms);
+            }
+            if let Some(ms) = i.long_press_ms {
+                n.long_press = Duration::from_millis(ms);
+            }
+            if let Some(v) = i.slop {
+                n.slop = v.max(0.0);
+            }
+        }
+        if let Some(k) = f.switch_key {
+            let mut chars = k.chars();
+            c.switch_key = match (chars.next(), chars.next()) {
+                (Some(ch), None) => Some(ch),
+                _ => return Err(format!("switch_key {k:?}: expected one character")),
+            };
         }
         if let Some(v) = f.title {
             c.title = v;
@@ -179,5 +278,21 @@ mod tests {
         let e = Config::from_toml("titel = \"typo\"").unwrap_err();
         assert!(e.contains("titel"), "{e}");
         assert_eq!(Config::from_toml("").unwrap().title, "scopekit");
+        assert_eq!(
+            Config::from_toml("switch_key = \"p\"").unwrap().switch_key,
+            Some('p')
+        );
+        let e = Config::from_toml("switch_key = \"F2\"").unwrap_err();
+        assert!(e.contains("one character"), "{e}");
+        let c = Config::from_toml(
+            "[input]\nwheel = \"pan\"\nright_drag = \"none\"\ndouble_tap_ms = 500",
+        )
+        .unwrap();
+        assert_eq!(c.input.wheel, crate::gesture::ScrollAction::Pan);
+        assert_eq!(c.input.right_drag, crate::gesture::DragAction::None);
+        assert_eq!(c.input.double_tap, Duration::from_millis(500));
+        let e = Config::from_toml("[input]\nwheel = \"spin\"").unwrap_err();
+        assert!(e.contains("input.wheel"), "{e}");
+        assert_eq!(Config::from_toml("help_key = \"\"").unwrap().help_key, None);
     }
 }
