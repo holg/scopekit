@@ -1,5 +1,5 @@
 //! Window mode: the same app in a native window. ratatui-wgpu draws the
-//! text into a texture; the [`Compositor`] puts it on the window surface
+//! text into a texture; the `Compositor` puts it on the window surface
 //! and then lets each placed GPU view draw into its region, on the same device, in
 //! the same frame, at the window's full resolution.
 

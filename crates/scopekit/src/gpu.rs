@@ -227,6 +227,7 @@ impl Offscreen {
 /// `width` x `height` texture of that format, and return RGBA8 rows (BGRA
 /// targets are swizzled). Used to copy a window's view without preparing
 /// it again on another device.
+#[cfg(feature = "window")]
 pub(crate) fn capture(
     gpu: &Gpu,
     view: &mut dyn GpuView,

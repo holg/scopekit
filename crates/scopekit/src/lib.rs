@@ -2,6 +2,9 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs, clippy::unwrap_used, clippy::expect_used)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+// Without a backend nothing drives the shared runtime (keys, gestures,
+// help); only the public types are left to use.
+#![cfg_attr(not(any(feature = "terminal", feature = "window")), allow(dead_code))]
 
 mod app;
 mod args;

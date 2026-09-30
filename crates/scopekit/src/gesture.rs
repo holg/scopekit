@@ -213,6 +213,8 @@ pub(crate) enum Button {
 
 /// Raw pointer input in target pixels, from either mode.
 #[derive(Debug, Clone, Copy)]
+// Only the window sees trackpad gestures (pinch, twist, double tap).
+#[cfg_attr(not(feature = "window"), allow(dead_code))]
 pub(crate) enum Pointer {
     Down {
         id: u64,
