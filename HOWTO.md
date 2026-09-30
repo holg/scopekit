@@ -26,25 +26,18 @@ Every Rust example on this page is compiled as a test.
 
 ### The dependency
 
-scopekit is a private repository on GitHub for now, so depend on it by git
-over SSH and pin a tag:
+```toml
+[dependencies]
+scopekit = "0.1"
+```
+
+To follow the repository instead, depend on it by git and pin a tag or a
+commit (`rev = "<commit>"`); `branch = "main"` follows the tip:
 
 ```toml
 [dependencies]
-scopekit = { git = "ssh://git@github.com/holg/scopekit.git", tag = "v0.1.0" }
+scopekit = { git = "https://github.com/holg/scopekit", tag = "v0.1.0" }
 ```
-
-Cargo's built-in git client does not use your SSH agent reliably. Let it
-use your own `git`, which already can fetch the repository, in the
-project's `.cargo/config.toml`:
-
-```toml
-[net]
-git-fetch-with-cli = true
-```
-
-`rev = "<commit>"` pins a commit; `branch = "main"` follows the tip. Take a
-tag for anything others build.
 
 ### Features
 
@@ -66,43 +59,18 @@ and the compiler rejects your view with "expected `wgpu::Device`, found
 
 ### Developing scopekit and an app side by side
 
-Keep the git dependency, and override it locally with a `[patch]` in the
-app's workspace `Cargo.toml` (or in `.cargo/config.toml`, which you can
+Keep the published dependency, and override it locally with a `[patch]` in
+the app's workspace `Cargo.toml` (or in `.cargo/config.toml`, which you can
 leave out of the repository):
 
 ```toml
-[patch."ssh://git@github.com/holg/scopekit.git"]
+[patch.crates-io]
 scopekit = { path = "../scopekit/crates/scopekit" }
 ```
 
 Edits in `../scopekit` then show up in the app at once, and the
-dependency line stays what CI and others use.
-
-### CI (GitHub Actions)
-
-A workflow cannot read the private repository on its own. Give it a
-read-only deploy key:
-
-1. `ssh-keygen -t ed25519 -N "" -f scopekit_deploy -C "ci read scopekit"`
-2. In `holg/scopekit` → Settings → Deploy keys: add `scopekit_deploy.pub`,
-   read-only.
-3. In the app's repository → Settings → Secrets → Actions: add
-   `SCOPEKIT_DEPLOY_KEY` with the content of `scopekit_deploy`.
-4. In the workflow, before any `cargo` step:
-
-```yaml
-env:
-  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-steps:
-  - uses: actions/checkout@v4
-  - uses: webfactory/ssh-agent@v0.9.0
-    with:
-      ssh-private-key: ${{ secrets.SCOPEKIT_DEPLOY_KEY }}
-```
-
-A public repository cannot build against a private scopekit for people
-outside: its CI can use the key, but a stranger cloning it cannot.
-Keep such crates out of public CI, or make scopekit public first.
+dependency line stays what CI and others use. For a git dependency, patch
+`[patch."https://github.com/holg/scopekit"]` instead.
 
 ### Integration checklist
 

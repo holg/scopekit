@@ -1,0 +1,63 @@
+# Publish scopekit to crates.io when a version tag is pushed:
+#   git tag v0.1.0 && git push origin v0.1.0
+# The tag must match `version` in crates/scopekit/Cargo.toml.
+# Needs the repository secret CARGO_REGISTRY_TOKEN (crates.io API token
+# with the publish-new and publish-update scopes).
+name: Publish to crates.io
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    name: Publish scopekit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Tag matches the crate version
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "scopekit") | .version')
+          if [[ "${GITHUB_REF_NAME#v}" != "$version" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match scopekit $version"
+            exit 1
+          fi
+
+      # The same gate as ci.yml, so a tag on an unchecked commit cannot ship.
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: HOWTO.md at the root is the crate's copy
+        run: cmp HOWTO.md crates/scopekit/HOWTO.md
+      - name: Clippy
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      # GPU tests skip themselves where the runner has no adapter.
+      - name: Test
+        run: cargo test --locked --workspace --all-features
+
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        # `shell: bash` adds pipefail, so a failed publish is not hidden by tee.
+        shell: bash
+        run: |
+          cargo publish --locked -p scopekit 2>&1 | tee publish.log || {
+            if grep -qE "already (exists|uploaded)" publish.log; then
+              echo "This version is already on crates.io, nothing to do."
+            else
+              exit 1
+            fi
+          }
