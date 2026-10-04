@@ -23,6 +23,12 @@ window = ["dep:ratatui-wgpu", "dep:winit"]
 # Copy text and view images to the system clipboard (`clipboard::copy_text`,
 # `clipboard::copy_image`, `Config::copy_key`, window text selection).
 clipboard = ["dep:arboard"]
+# A command line that edits like a shell (`lineedit::LineEditor`, Emacs keys,
+# history search, undo), in an app or inline (`lineedit::read_line`).
+lineedit = []
+# A SQLite database for an app (`store::Store`): key/value pairs, any SQL,
+# command history, a session log and help texts. Bundles SQLite.
+store = ["dep:rusqlite"]
 # Read `Config` from TOML (`Config::from_toml`, `Config::load`).
 toml = ["dep:toml", "dep:serde"]
 
@@ -39,3 +45,4 @@ winit = { version = "0.30.13", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 arboard = { version = "3.6", optional = true }
 toml = { version = "1", optional = true }
+rusqlite = { version = "0.40", features = ["bundled"], optional = true }

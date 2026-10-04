@@ -1,8 +1,12 @@
 # scopekit roadmap
 
-scopekit is the shared UI layer for several projects. It was built for
-**dicomscope** in [hl7v2](https://github.com/holg/hl7v2) (DICOM viewer
-with HL7 order linkage), which stays its reference app. Next come
+scopekit is the shared UI layer for several projects, and is to become
+the **plugin host for many wgpu views**: one place where independent
+renderers (a DICOM image, a globe, a CAD drawing, an emulator's screen)
+are placed, composited and driven, in a terminal or a window. It was built
+for **dicomscope** in [hl7v2](https://github.com/holg/hl7v2) (DICOM viewer
+with HL7 order linkage), which stays its reference app. **quadra-lisp**
+(acadlisp's REPL for Snow's Quadra 650) is the second app on it. Next come
 geodb-globe (geodb-rs), bimifc's viewer, and the **bricks** system. It
 has to stay generic: no project's domain in it, everything configurable.
 
@@ -44,6 +48,51 @@ Since 0.1.0 (unreleased):
   timed-out query (tmux) no longer swallows the next key: ratatui-image 11
   leaves its reader thread blocked on stdin, scopekit answers it with a
   status request. *To report upstream.*
+- pasting (`Event::Paste`): bracketed paste in terminals, Cmd-V /
+  Ctrl-Shift-V in windows, for apps with `captures_text`;
+  `clipboard::paste_text`;
+- pictures of the composited window for the app (`App::mirror`,
+  `App::mirrored`, `Mirror`), e.g. to show it in another display;
+- `App::window_size`: the app sets the window's size.
+
+## Adopters
+
+| App | Where | Uses |
+|---|---|---|
+| dicomscope-tui | hl7v2 | reference app: views, `Driver` tests, both modes |
+| quadra-lisp | infinite-mac/snow `quadra_lisp` | acadlisp REPL client: transcript, a wgpu drawing view, paste, window mirrored into the emulated Mac (`--mirror`, F6), window size |
+| geodb-globe | geodb-rs | in progress (wgpu 28 → 30, HOWTO section 10) |
+
+acadlisp itself also runs in a browser (snow's `frontend_web_lisp`, a
+wasm worker next to the emulator worker), without scopekit: scopekit has
+no web target yet (see "Plugin host" below).
+
+## Plugin host
+
+The goal: an app does not own the screen; it contributes views and
+panels to a host that places, composites and routes input to them, and
+that can be driven by a script (acadlisp: the same Lisp that already
+drives the Mac emulator and Chromium).
+
+What already serves this:
+- named views (`Views`, `ViewSlot::place`), any number, prepared and
+  rendered on the shared device and target format;
+- a view can be rebuilt for another target (terminal ↔ window switch);
+- overlays, gestures, help and clipboard are host features, not app code;
+- `App::mirror`: the composited result can be handed elsewhere.
+
+What is missing, in order:
+1. **Layout shell** (below, "Next" 2): panels and views from several
+   plugins in one window, focus and key routing.
+2. **A plugin trait** smaller than `App`: views + panels + commands, the
+   `Brick` sketch below without the emulator parts.
+3. **A command surface for scripts**: named commands per plugin, callable
+   from a REPL (acadlisp) or a socket, so a Lisp form can open, place and
+   drive views. quadra-lisp's socket protocol is the model *(to verify how
+   much of it generalises)*.
+4. **Web target** *(to verify)*: wgpu on WebGPU and ratatui in a canvas,
+   so the browser build (acadlisp in `frontend_web_lisp`) can host the
+   same views.
 
 ## Next in scopekit
 
@@ -61,10 +110,10 @@ Since 0.1.0 (unreleased):
    not one `draw` function. This is what bricks plug into.
 3. **Key bindings from config.** Named actions (`quit`, `next-tab`, …) bound
    in TOML, shown in a generated help overlay.
-4. **Adopters:**
-   - **geodb-globe:** in progress (wgpu 28 → 30, HOWTO section 10).
-   - **bimifc's terminal viewer:** *to verify* what it renders today.
-5. **Publish** scopekit on crates.io once geodb-globe runs on it.
+4. **Adopters:** geodb-globe (in progress); bimifc's terminal viewer
+   (*to verify* what it renders today).
+5. **Release 0.2** on crates.io (0.1.0 is published) with the changes
+   since 0.1.0 above.
 
 ## Bricks
 
@@ -113,7 +162,8 @@ workflow (order → worklist → images → report → FHIR) running on one
 machine for development, demos and integration tests, placed on the
 floors and rooms of the actual building.
 
-$1
+### Bricks from IFC
+
 Bricks are described in IFC (ISO 16739) files and read with **bimifc**
 (`bimifc-parser`, IFC4 and IFC5). A device in the building model is a
 brick:
@@ -182,6 +232,7 @@ emulates, and the real device remains the reference.
 
 ### Milestones
 
+1. Console panel and layout shell in scopekit (see "Next").
    Port dicomscope-tui onto the shell as its first real brick (viewer).
 2. QEMU backend: `lm3s6965evb` running an embassy example, with its UART
    in the console and GDB attachable. Needs `rustup target add

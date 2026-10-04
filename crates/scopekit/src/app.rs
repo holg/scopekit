@@ -166,6 +166,25 @@ pub trait App {
         None
     }
 
+    /// Window mode: whether the app wants pictures of the whole window (text
+    /// and views, as shown) in [`mirrored`](App::mirrored), e.g. to show
+    /// them somewhere else. Asked before each frame.
+    fn mirror(&mut self) -> Mirror {
+        Mirror::Off
+    }
+
+    /// A picture of the window as it was drawn (RGBA rows, `width` x
+    /// `height` window pixels), when [`mirror`](App::mirror) asked for it.
+    fn mirrored(&mut self, rgba: Vec<u8>, width: u32, height: u32) {
+        let _ = (rgba, width, height);
+    }
+
+    /// Window mode: a size (logical pixels) the window should have, asked
+    /// before each frame; the window is resized when this changes.
+    fn window_size(&mut self) -> Option<(u32, u32)> {
+        None
+    }
+
     /// Called after the app moved to `mode` with [`Config::switch_key`],
     /// before its first frame there. [`start`](App::start) runs again too,
     /// with the new mode's [`Waker`], and GPU views are prepared again for
@@ -173,6 +192,17 @@ pub trait App {
     fn mode_changed(&mut self, mode: Mode) {
         let _ = mode;
     }
+}
+
+/// What [`App::mirror`] asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mirror {
+    /// No pictures.
+    Off,
+    /// A picture of each frame that changed the window.
+    Changes,
+    /// A picture of the next frame, even if nothing changed.
+    Now,
 }
 
 /// Why a mode's loop returned.

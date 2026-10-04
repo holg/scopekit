@@ -8,8 +8,8 @@ use crate::gpu::PixelRect;
 use crate::gpu::{headless, Gpu, Offscreen, Views};
 use crate::waker::Waker;
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind, KeyModifiers, MouseButton,
-    MouseEvent, MouseEventKind,
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    Event, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use image::{DynamicImage, RgbaImage};
 use ratatui::backend::Backend;
@@ -420,7 +420,15 @@ pub(crate) fn session(app: &mut dyn App, views: Views, config: &Config) -> Resul
     if config.mouse {
         let _ = crossterm::execute!(std::io::stdout(), EnableMouseCapture);
     }
+    // An app that takes text gets pastes whole (Event::Paste), not as keys
+    let paste = app.captures_text();
+    if paste {
+        let _ = crossterm::execute!(std::io::stdout(), EnableBracketedPaste);
+    }
     let result = run_loop(&mut terminal, app, views, config);
+    if paste {
+        let _ = crossterm::execute!(std::io::stdout(), DisableBracketedPaste);
+    }
     if config.mouse {
         let _ = crossterm::execute!(std::io::stdout(), DisableMouseCapture);
     }

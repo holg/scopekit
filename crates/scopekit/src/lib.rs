@@ -16,6 +16,10 @@ mod config_file;
 pub mod gesture;
 pub mod gpu;
 mod help;
+#[cfg(feature = "lineedit")]
+pub mod lineedit;
+#[cfg(feature = "store")]
+pub mod store;
 #[cfg(feature = "terminal")]
 pub mod terminal;
 mod waker;
@@ -24,7 +28,7 @@ pub mod window;
 
 #[cfg(any(feature = "terminal", feature = "window"))]
 use app::End;
-pub use app::{App, Flow, ViewSlot};
+pub use app::{App, Flow, Mirror, ViewSlot};
 pub use config::{Backend, Config, Mode, Palette, Protocol};
 pub use gesture::{DragAction, Gesture, GestureKind, GestureType, Input, ScrollAction};
 pub use gpu::{render_to_rgba, share, Gpu, GpuView, PixelRect, SharedView, Target, Views};

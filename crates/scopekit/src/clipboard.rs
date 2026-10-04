@@ -31,6 +31,11 @@ pub fn copy_text(text: &str) -> Result<(), String> {
     with(|c| c.set_text(text.to_string()))
 }
 
+/// The clipboard's text.
+pub fn paste_text() -> Result<String, String> {
+    with(arboard::Clipboard::get_text)
+}
+
 /// Put an image on the clipboard: tightly packed RGBA8 rows, `width` x
 /// `height` (as [`render_to_rgba`](crate::render_to_rgba) returns them).
 pub fn copy_image(rgba: &[u8], width: u32, height: u32) -> Result<(), String> {

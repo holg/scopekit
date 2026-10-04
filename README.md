@@ -23,7 +23,7 @@ crossterm events too), and wrap your wgpu renderer in one trait.
 | **Guide** | [HOWTO.md](HOWTO.md): from a first app to porting an existing renderer |
 | **Example** | [`plasma.rs`](crates/scopekit/examples/plasma.rs): an animated view, a side panel and mouse control in one file |
 | **Plans** | [ROADMAP.md](ROADMAP.md): console panel, layout shell, bricks (emulated IoT and healthcare devices from IFC building models) |
-| **Used by** | dicomscope-tui in [hl7v2](https://github.com/holg/hl7v2), its reference app; geodb-globe next |
+| **Used by** | dicomscope-tui in [hl7v2](https://github.com/holg/hl7v2), its reference app; quadra-lisp (acadlisp REPL for the Snow Quadra 650 emulator); geodb-globe next |
 
 ## Integrate in five minutes
 

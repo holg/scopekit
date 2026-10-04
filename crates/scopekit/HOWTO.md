@@ -494,10 +494,29 @@ With the `clipboard` feature (default):
 - in a window, Shift + drag selects text and Cmd-C (Ctrl-Shift-C elsewhere)
   copies it; in a terminal, the terminal's own selection works with Shift +
   drag while scopekit reports the mouse;
-- `scopekit::clipboard::{copy_text, copy_image}` for the app's own copying.
+- pasting: an app whose `App::captures_text` returns `true` gets pasted
+  text whole, as `Event::Paste`: in a terminal through bracketed paste, in
+  a window from Cmd-V (Ctrl-Shift-V elsewhere);
+- `scopekit::clipboard::{copy_text, copy_image, paste_text}` for the app's
+  own copying and pasting.
 
-`App::message` receives "copied …" or the reason copying failed, for a
-status line.
+`App::message` receives "copied …" or the reason copying or pasting
+failed, for a status line.
+
+### Pictures of the window, window size
+
+In a window, an app can ask for pictures of what is shown (text, views and
+overlays, as composited), for example to show the window somewhere else:
+
+- `App::mirror` is asked before each frame: `Mirror::Off` (default),
+  `Mirror::Changes` (a picture of each frame that changed the window) or
+  `Mirror::Now` (the next frame, even if nothing changed);
+- `App::mirrored(rgba, width, height)` receives each picture as RGBA rows
+  in window pixels, after the frame was presented.
+
+`App::window_size` returns the size (logical pixels) the window should
+have; it is asked before each frame, and the window is resized when the
+answer changes. Both are ignored in a terminal.
 
 ### Switching between terminal and window
 

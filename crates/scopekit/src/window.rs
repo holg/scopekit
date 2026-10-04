@@ -3,7 +3,7 @@
 //! and then lets each placed GPU view draw into its region, on the same device, in
 //! the same frame, at the window's full resolution.
 
-use crate::app::{is_copy_key, is_help_key, is_switch_key, App, End, Flow, ViewSlot};
+use crate::app::{is_copy_key, is_help_key, is_switch_key, App, End, Flow, Mirror, ViewSlot};
 use crate::config::{Config, Palette};
 use crate::gesture::{Button, Pointer, Recognizer};
 use crate::gpu::{instance, Gpu, PixelRect, Target, Views};
@@ -58,6 +58,57 @@ pub(crate) struct Shared {
     /// A view to capture for the clipboard in the next frame, and the result.
     copy_request: RefCell<Option<String>>,
     copied: RefCell<Option<Result<Captured, String>>>,
+    /// The app wants pictures of the window ([`App::mirror`]), and the
+    /// next one, copied out by the GPU and read after the frame is sent.
+    mirror: Cell<bool>,
+    mirror_pending: RefCell<Option<MirrorCopy>>,
+}
+
+/// A picture of the window on its way from the GPU.
+struct MirrorCopy {
+    device: Device,
+    buffer: wgpu::Buffer,
+    width: u32,
+    height: u32,
+    padded: u32,
+    bgra: bool,
+}
+
+impl MirrorCopy {
+    /// The picture as RGBA rows (waits for the GPU).
+    fn read(self) -> Result<(Vec<u8>, u32, u32), String> {
+        let slice = self.buffer.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx.send(r);
+        });
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map_err(|e| format!("mirror poll: {e}"))?;
+        rx.recv()
+            .map_err(|e| format!("mirror: {e}"))?
+            .map_err(|e| format!("mirror map: {e}"))?;
+        let mapped = slice
+            .get_mapped_range()
+            .map_err(|e| format!("mirror range: {e}"))?;
+        let row = (self.width * 4) as usize;
+        let mut rgba = Vec::with_capacity(row * self.height as usize);
+        for chunk in mapped
+            .chunks(self.padded as usize)
+            .take(self.height as usize)
+        {
+            rgba.extend_from_slice(&chunk[..row]);
+        }
+        drop(mapped);
+        self.buffer.unmap();
+        for px in rgba.chunks_exact_mut(4) {
+            if self.bgra {
+                px.swap(0, 2);
+            }
+            px[3] = 255;
+        }
+        Ok((rgba, self.width, self.height))
+    }
 }
 
 /// A captured view: name, RGBA pixels, width, height.
@@ -111,32 +162,12 @@ impl PostProcessor for Compositor {
         config: &SurfaceConfiguration,
         surface_view: &TextureView,
     ) {
-        self.text
-            .process(encoder, queue, text_view, config, surface_view);
+        self.paint(encoder, queue, text_view, config, surface_view);
         self.shared.dirty.set(false);
         self.shared.presented.set(true);
-        // The queue arrives only here: views are prepared on the first
-        // frame that shows them.
-        let gpu = self.gpu.get_or_insert_with(|| Gpu {
-            device: self.device.clone(),
-            queue: queue.clone(),
-        });
-        for (name, region) in self.shared.regions.borrow().iter() {
-            let Some(view) = self.shared.views.get(name) else {
-                continue;
-            };
-            let mut view = view.borrow_mut();
-            if self.prepared.insert(name.clone()) {
-                view.prepare(gpu, self.format);
-            }
-            let target = Target {
-                view: surface_view,
-                format: self.format,
-                size: (config.width, config.height),
-                region: *region,
-            };
-            view.render(gpu, encoder, &target);
-        }
+        let Some(gpu) = self.gpu.as_ref() else {
+            return;
+        };
         // A copy request: render the view once more, into its own texture.
         if let Some(name) = self.shared.copy_request.borrow_mut().take() {
             let region = self
@@ -159,10 +190,9 @@ impl PostProcessor for Compositor {
             };
             *self.shared.copied.borrow_mut() = Some(result);
         }
-        let overlays = self.shared.overlays.borrow();
-        if !overlays.is_empty() {
-            self.overlay
-                .draw(encoder, queue, config, surface_view, &overlays);
+        if self.shared.mirror.get() {
+            let copy = self.mirror_copy(encoder, queue, text_view, config);
+            *self.shared.mirror_pending.borrow_mut() = Some(copy);
         }
     }
 
@@ -174,6 +204,105 @@ impl PostProcessor for Compositor {
                     .get(n)
                     .is_some_and(|v| v.borrow().changed())
             })
+    }
+}
+
+impl Compositor {
+    /// The frame into `target`: the text, the views, the text over them.
+    fn paint(
+        &mut self,
+        encoder: &mut CommandEncoder,
+        queue: &Queue,
+        text_view: &TextureView,
+        config: &SurfaceConfiguration,
+        target: &TextureView,
+    ) {
+        self.text.process(encoder, queue, text_view, config, target);
+        // The queue arrives only here: views are prepared on the first
+        // frame that shows them.
+        let gpu = self.gpu.get_or_insert_with(|| Gpu {
+            device: self.device.clone(),
+            queue: queue.clone(),
+        });
+        for (name, region) in self.shared.regions.borrow().iter() {
+            let Some(view) = self.shared.views.get(name) else {
+                continue;
+            };
+            let mut view = view.borrow_mut();
+            if self.prepared.insert(name.clone()) {
+                view.prepare(gpu, self.format);
+            }
+            let target = Target {
+                view: target,
+                format: self.format,
+                size: (config.width, config.height),
+                region: *region,
+            };
+            view.render(gpu, encoder, &target);
+        }
+        let overlays = self.shared.overlays.borrow();
+        if !overlays.is_empty() {
+            self.overlay.draw(encoder, queue, config, target, &overlays);
+        }
+    }
+
+    /// The frame once more, into a texture that is copied out for the app.
+    fn mirror_copy(
+        &mut self,
+        encoder: &mut CommandEncoder,
+        queue: &Queue,
+        text_view: &TextureView,
+        config: &SurfaceConfiguration,
+    ) -> MirrorCopy {
+        let (width, height) = (config.width.max(1), config.height.max(1));
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("scopekit mirror"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.paint(encoder, queue, text_view, config, &view);
+        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let padded = (width * 4).div_ceil(align) * align;
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("scopekit mirror read-back"),
+            size: u64::from(padded) * u64::from(height),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        encoder.copy_texture_to_buffer(
+            texture.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded),
+                    rows_per_image: Some(height),
+                },
+            },
+            size,
+        );
+        MirrorCopy {
+            device: self.device.clone(),
+            buffer,
+            width,
+            height,
+            padded,
+            bgra: matches!(
+                self.format,
+                TextureFormat::Bgra8Unorm | TextureFormat::Bgra8UnormSrgb
+            ),
+        }
     }
 }
 
@@ -442,6 +571,8 @@ struct Handler<'a> {
     /// Text selection in cells (anchor, end), made with Shift + drag.
     selection: Option<((u16, u16), (u16, u16))>,
     selecting: bool,
+    /// The window size the app asked for last ([`App::window_size`]).
+    asked_size: Option<((u32, u32), Instant)>,
 }
 
 impl Handler<'_> {
@@ -510,6 +641,26 @@ impl Handler<'_> {
             f32::from(size.pixels.width) / f32::from(size.columns_rows.width.max(1)),
             f32::from(size.pixels.height) / f32::from(size.columns_rows.height.max(1)),
         );
+        // The size the app wants; asked again while the window has another
+        // (a window that is still opening can ignore the request)
+        if let (Some((w, h)), Some(window)) = (self.app.window_size(), &self.window) {
+            let now: winit::dpi::LogicalSize<f64> =
+                window.inner_size().to_logical(window.scale_factor());
+            let differs =
+                (now.width - f64::from(w)).abs() > 1.0 || (now.height - f64::from(h)).abs() > 1.0;
+            let due = self
+                .asked_size
+                .is_none_or(|(size, at)| size != (w, h) || at.elapsed() > Duration::from_secs(1));
+            if differs && due {
+                let _ = window.request_inner_size(winit::dpi::LogicalSize::new(w, h));
+                self.asked_size = Some(((w, h), Instant::now()));
+            }
+        }
+        let mirror = self.app.mirror();
+        self.shared.mirror.set(mirror != Mirror::Off);
+        if mirror == Mirror::Now {
+            self.shared.dirty.set(true);
+        }
         let mut slot = ViewSlot::new(cell_px, self.shared.describe.borrow().clone());
         let (app, shared, config) = (&mut *self.app, &self.shared, self.config);
         let mut help_open = self.help_open;
@@ -566,6 +717,13 @@ impl Handler<'_> {
             })
             .map_err(|e| e.to_string())?;
         self.help_open = help_open;
+        let mirrored = self.shared.mirror_pending.borrow_mut().take();
+        if let Some(copy) = mirrored {
+            match copy.read() {
+                Ok((rgba, w, h)) => self.app.mirrored(rgba, w, h),
+                Err(e) => self.app.message(&format!("mirror failed: {e}")),
+            }
+        }
         let copied = self.shared.copied.borrow_mut().take();
         if let Some(result) = copied {
             let text = match result.and_then(|(name, rgba, w, h)| {
@@ -767,6 +925,17 @@ impl ApplicationHandler<Wake> for Handler<'_> {
                     && matches!(&event.logical_key, Key::Character(c) if c.eq_ignore_ascii_case("c"));
                 if copy_combo && self.selection.is_some() {
                     self.copy_selection();
+                    return;
+                }
+                // Cmd-V (Ctrl-Shift-V elsewhere) pastes the clipboard's
+                // text, as a terminal with bracketed paste does
+                let paste_combo = (m.super_key() || (m.control_key() && m.shift_key()))
+                    && matches!(&event.logical_key, Key::Character(c) if c.eq_ignore_ascii_case("v"));
+                if paste_combo {
+                    match paste_text() {
+                        Ok(text) => self.send(event_loop, Event::Paste(text)),
+                        Err(e) => self.app.message(&format!("paste failed: {e}")),
+                    }
                     return;
                 }
                 if self.modifiers.super_key() {
@@ -1068,6 +1237,16 @@ fn copy_image(rgba: &[u8], w: u32, h: u32) -> Result<(), String> {
     crate::clipboard::copy_image(rgba, w, h)
 }
 
+#[cfg(feature = "clipboard")]
+fn paste_text() -> Result<String, String> {
+    crate::clipboard::paste_text()
+}
+
+#[cfg(not(feature = "clipboard"))]
+fn paste_text() -> Result<String, String> {
+    Err("scopekit was built without the clipboard feature".into())
+}
+
 #[cfg(not(feature = "clipboard"))]
 fn copy_text(_: &str) -> Result<(), String> {
     Err("scopekit was built without the clipboard feature".into())
@@ -1207,6 +1386,8 @@ pub(crate) fn session(
             presented: Cell::new(false),
             copy_request: RefCell::new(None),
             copied: RefCell::new(None),
+            mirror: Cell::new(false),
+            mirror_pending: RefCell::new(None),
         }),
         window: None,
         terminal: None,
@@ -1230,6 +1411,7 @@ pub(crate) fn session(
         touch_mouse: None,
         selection: None,
         selecting: false,
+        asked_size: None,
     };
     let (event_loop, result) = run_loop(event_loop, &mut handler);
     let (end, error) = (handler.end, handler.error.take());
